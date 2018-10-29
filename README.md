@@ -1,0 +1,2 @@
+# kaggle_house_pricing_sw
+kaggle_house_pricing_competition, data mining
