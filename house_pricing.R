@@ -4,6 +4,10 @@ library(reshape2)
 library(GGally)
 library(missForest)
 library(randomForest)
+library(gbm)
+library(xgboost)
+library(dplyr)
+
 
 #####Data exploring
 train <- read.csv("train.csv", header = T)
@@ -149,12 +153,132 @@ names(rf_pr)[2] <- "SalePrice"
 
 write.csv(rf_pr,"result2.csv")
 
-#gbm
-
-#
+###############################################################GBM
 
 
+#--------------------------------------------------------------------
+#Grid Search
+
+random_index <- sample(1:nrow(train.imp), nrow(train.imp))
+random_ames_train <- train.imp[random_index, ]
+# create hyperparameter grid
+hyper_grid <- expand.grid(
+  shrinkage = c(.01, .1, .3),
+  interaction.depth = c(1, 3, 5),
+  n.minobsinnode = c(5, 10, 15),
+  bag.fraction = c(.65, .8, 1), 
+  optimal_trees = 0,               # a place to dump results
+  min_RMSE = 0                     # a place to dump results
+)
+
+# total number of combinations
+nrow(hyper_grid)
+#81
+# grid search 
+for(i in 1:nrow(hyper_grid)) {
+  
+  # train model
+  gbm.tune <- gbm(
+    formula = SalePrice ~ .,
+    distribution = "gaussian",
+    data = random_ames_train,
+    n.trees = 5000,
+    interaction.depth = hyper_grid$interaction.depth[i],
+    shrinkage = hyper_grid$shrinkage[i],
+    n.minobsinnode = hyper_grid$n.minobsinnode[i],
+    bag.fraction = hyper_grid$bag.fraction[i],
+    train.fraction = .75,
+    n.cores = NULL, # will use all cores by default
+    verbose = FALSE
+  )
+  
+  # add min training error and trees to grid
+  hyper_grid$optimal_trees[i] <- which.min(gbm.tune$valid.error)
+  hyper_grid$min_RMSE[i] <- sqrt(min(gbm.tune$valid.error))
+}
+
+hyper_grid %>% 
+  dplyr::arrange(min_RMSE) %>%
+  head(10)
+
+#shrinkage interaction.depth n.minobsinnode bag.fraction optimal_trees min_RMSE
+#1       0.01                 5              5         1.00          1613 22476.73
+#2       0.01                 5              5         0.80          1457 22561.15
+#3       0.01                 3              5         1.00          2529 22670.95
 
 
+gbm.fit <- gbm(
+  formula = SalePrice ~ .,
+  distribution = "gaussian",
+  data = train.imp,
+  bag.fraction = 1,
+  n.minobsinnode = 5,
+  n.trees = 1613,
+  interaction.depth = 5,
+  shrinkage = 0.01,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+)  
+gbm1 <- predict(gbm.fit, newdata = test.imp, n.trees=1000)
+gbm_pr1 <- as.data.frame(cbind(test.imp$Id, gbm1))
+head(gbm_pr1)
+names(gbm_pr1)[1] <- "ID"
+names(gbm_pr1)[2] <- "SalePrice"
+
+write.csv(gbm_pr1,"result3.csv") #0.14935
+
+# get MSE and compute RMSE
+sqrt(min(gbm.fit$cv.error))
+
+#********************************************************************************************
+
+gbm.fit <- gbm(
+  formula = SalePrice ~ .,
+  distribution = "gaussian",
+  data = train.imp,
+  bag.fraction = 0.8,
+  n.minobsinnode = 5,
+  n.trees = 1457,
+  interaction.depth = 5,
+  shrinkage = 0.01,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+)  
+gbm1 <- predict(gbm.fit, newdata = test.imp, n.trees=1457)
+gbm_pr1 <- as.data.frame(cbind(test.imp$Id, gbm1))
+head(gbm_pr1)
+names(gbm_pr1)[1] <- "ID"
+names(gbm_pr1)[2] <- "SalePrice"
+
+write.csv(gbm_pr1,"result4.csv") #0.13436
+
+#********************************************************************************************
+
+gbm.fit <- gbm(
+  formula = SalePrice ~ .,
+  distribution = "gaussian",
+  data = train.imp,
+  bag.fraction = 1,
+  n.minobsinnode = 5,
+  n.trees = 2529,
+  interaction.depth = 3,
+  shrinkage = 0.01,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+)  
+gbm1 <- predict(gbm.fit, newdata = test.imp, n.trees=2529)
+gbm_pr1 <- as.data.frame(cbind(test.imp$Id, gbm1))
+head(gbm_pr1)
+names(gbm_pr1)[1] <- "ID"
+names(gbm_pr1)[2] <- "SalePrice"
+
+write.csv(gbm_pr1,"result5.csv") #0.13436
+
+
+
+#**********************************************************************************************
 #modeling (H2O)
 
